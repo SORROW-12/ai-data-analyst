@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>AI数据分析助手</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; }
+        .header { background: linear-gradient(135deg, #667eea, #764ba2); color: white; padding: 20px 40px; }
+        .header h1 { font-size: 24px; }
+        .header p { opacity: 0.8; margin-top: 4px; font-size: 14px; }
+        .container { max-width: 900px; margin: 30px auto; padding: 0 20px; }
+        .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .card h2 { font-size: 16px; color: #555; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .upload-area { border: 2px dashed #d0d7de; border-radius: 8px; padding: 30px; text-align: center; cursor: pointer; transition: all 0.2s; }
+        .upload-area:hover { border-color: #667eea; background: #f8f7ff; }
+        .upload-area input { display: none; }
+        .upload-area p { color: #888; margin-top: 8px; font-size: 14px; }
+        .btn { background: linear-gradient(135deg, #667eea, #764ba2); color: white; border: none; padding: 10px 24px; border-radius: 8px; cursor: pointer; font-size: 14px; transition: opacity 0.2s; }
+        .btn:hover { opacity: 0.9; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .quality-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 12px; }
+        .quality-item { background: #f8f9fa; border-radius: 8px; padding: 12px; text-align: center; }
+        .quality-item .num { font-size: 24px; font-weight: bold; color: #667eea; }
+        .quality-item .label { font-size: 12px; color: #888; margin-top: 4px; }
+        .quality-item.warn .num { color: #e74c3c; }
+        .input-row { display: flex; gap: 10px; }
+        .input-row input { flex: 1; padding: 10px 14px; border: 1px solid #d0d7de; border-radius: 8px; font-size: 14px; outline: none; }
+        .input-row input:focus { border-color: #667eea; }
+        .answer-box { margin-top: 16px; background: #f8f7ff; border-left: 3px solid #667eea; padding: 14px; border-radius: 0 8px 8px 0; font-size: 14px; line-height: 1.8; display: none; }
+        .sql-box { margin-top: 10px; background: #1e1e2e; color: #cdd6f4; padding: 12px; border-radius: 8px; font-family: monospace; font-size: 13px; display: none; }
+        .status { font-size: 13px; color: #667eea; margin-top: 10px; display: none; }
+        .tag { display: inline-block; background: #e8f4fd; color: #2980b9; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin: 2px; cursor: pointer; }
+        .tag:hover { background: #667eea; color: white; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 AI数据分析助手</h1>
+        <p>上传CSV文件，用自然语言提问，获取数据洞察</p>
+    </div>
+    <div class="container">
+        <!-- 上传区域 -->
+        <div class="card">
+            <h2>📁 上传数据文件</h2>
+            <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+                <input type="file" id="fileInput" accept=".csv" onchange="uploadFile(this)">
+                <div style="font-size: 36px">📊</div>
+                <p>点击上传 CSV 文件</p>
+            </div>
+            <div class="status" id="uploadStatus">正在上传并分析数据质量...</div>
+        </div>
+
+        <!-- 数据质量 -->
+        <div class="card" id="qualityCard" style="display:none">
+            <h2>🔍 数据质量报告</h2>
+            <div class="quality-grid" id="qualityGrid"></div>
+        </div>
+
+        <!-- 问答区域 -->
+        <div class="card" id="queryCard" style="display:none">
+            <h2>💬 自然语言查询</h2>
+            <div style="margin-bottom: 12px;">
+                常用问题：
+                <span class="tag" onclick="setQ('一共有多少行数据？有哪些列？')">数据概览</span>
+                <span class="tag" onclick="setQ('哪个国家销售额最高？给出具体金额')">销售排名</span>
+                <span class="tag" onclick="setQ('每个月的总销售额是多少？哪个月最高？')">月度趋势</span>
+                <span class="tag" onclick="setQ('销售数量最多的前5个商品是什么？')">热销商品</span>
+            </div>
+            <div class="input-row">
+                <input type="text" id="questionInput" placeholder="输入你的问题，例如：哪个国家销售额最高？" onkeydown="if(event.key==='Enter')ask()">
+                <button class="btn" id="askBtn" onclick="ask()">分析</button>
+            </div>
+            <div class="status" id="queryStatus">AI正在分析，请稍候...</div>
+            <div class="answer-box" id="answerBox"></div>
+            <div class="sql-box" id="sqlBox"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentFile = '';
+
+        function uploadFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+            document.getElementById('uploadStatus').style.display = 'block';
+            const formData = new FormData();
+            formData.append('file', file);
+            fetch('/upload', { method: 'POST', body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    currentFile = data.filename;
+                    document.getElementById('uploadStatus').style.display = 'none';
+                    showQuality(data.quality);
+                    document.getElementById('queryCard').style.display = 'block';
+                });
+        }
+
+        function showQuality(q) {
+            const card = document.getElementById('qualityCard');
+            const grid = document.getElementById('qualityGrid');
+            card.style.display = 'block';
+            grid.innerHTML = `
+                <div class="quality-item"><div class="num">${q.rows.toLocaleString()}</div><div class="label">总行数</div></div>
+                <div class="quality-item"><div class="num">${q.cols}</div><div class="label">总列数</div></div>
+                <div class="quality-item ${Object.keys(q.missing).length>0?'warn':''}">
+                    <div class="num">${Object.keys(q.missing).length}</div><div class="label">缺失值列数</div>
+                </div>
+                <div class="quality-item ${q.duplicates>0?'warn':''}">
+                    <div class="num">${q.duplicates}</div><div class="label">重复行数</div>
+                </div>
+            `;
+        }
+
+        function setQ(q) { document.getElementById('questionInput').value = q; }
+
+        function ask() {
+            const q = document.getElementById('questionInput').value.trim();
+            if (!q || !currentFile) return;
+            document.getElementById('askBtn').disabled = true;
+            document.getElementById('queryStatus').style.display = 'block';
+            document.getElementById('answerBox').style.display = 'none';
+            document.getElementById('sqlBox').style.display = 'none';
+            fetch('/query', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({filename: currentFile, question: q})
+            })
+            .then(r => r.json())
+            .then(data => {
+                document.getElementById('queryStatus').style.display = 'none';
+                document.getElementById('askBtn').disabled = false;
+                const answerBox = document.getElementById('answerBox');
+                answerBox.style.display = 'block';
+                answerBox.innerHTML = data.answer.replace(/\n/g, '<br>');
+                if (data.sql) {
+                    const sqlBox = document.getElementById('sqlBox');
+                    sqlBox.style.display = 'block';
+                    sqlBox.innerHTML = '🔧 执行SQL：' + data.sql;
+                }
+            });
+        }
+    </script>
+</body>
+</html>
